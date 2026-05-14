@@ -15,7 +15,7 @@
 
 - 思考强度选项新增「关闭思考」。
 - 思考强度保留：未设置、关闭思考、低、中、高、超高。
-- 保留思考强度调试日志开关，方便用adb logcat 查看reasoning-effort-debug。
+- 保留思考强度调试日志开关，方便用adb logcat 查看reasoning-effort-debug。
 
 ## APK 信息
 
