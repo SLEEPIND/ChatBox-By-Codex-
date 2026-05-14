@@ -1,4 +1,4 @@
-﻿# ChatBox-By-Codex
+﻿# ChatBox Adjustable Reasoning Effort By Codex
 
 这是一个由 **OpenAI Codex** 基于 Chatbox Android 版源码辅助修改、构建并整理发布的非官方调试版 APK。
 
@@ -8,31 +8,44 @@
 
 最新版 APK 请到 Releases 下载：
 
-- [下载 APK](https://github.com/SLEEPIND/ChatBox-By-Codex-/releases/download/v2026.05.14-codex-debug/chatbox-enter-newline-disable-thinking-button-send-debug.apk)
-- Release 页面：https://github.com/SLEEPIND/ChatBox-By-Codex-/releases
+- [下载 APK](https://github.com/SLEEPIND/ChatBox-Adjustable-Reasoning-Effort-By-Codex/releases/download/v2026.05.14-codex-debug/chatbox-enter-newline-disable-thinking-button-send-debug.apk)
+- Release 页面：https://github.com/SLEEPIND/ChatBox-Adjustable-Reasoning-Effort-By-Codex/releases
 
 ## 这版改了什么
 
+- 输入框按 `Enter` 只换行，不再直接发送。
+- 禁用 `Enter` / `Ctrl+Enter` 等键盘快捷发送，发送只能点击发送按钮。
 - 思考强度选项新增「关闭思考」。
 - 思考强度保留：未设置、关闭思考、低、中、高、超高。
-- 保留思考强度调试日志开关，方便用adb logcat 查看reasoning-effort-debug。
+- 移除了之前容易混淆的「最大」选项。
+- 保留思考强度调试日志开关，方便用 `adb logcat` 查看 `reasoning-effort-debug`。
+- 继续保留之前对 Android 状态栏、安全区、键盘弹起相关的兼容修正。
+
+## 源码修改说明
+
+如果你想查看 Codex 具体改了哪些源码，可以看这两个文件：
+
+- [SOURCE_NOTES.md](./SOURCE_NOTES.md)：中文源码修改说明。
+- [codex-changes.patch](./codex-changes.patch)：Codex 生成的主要源码改动 patch。
+
+说明：当前仓库以发布 APK 和记录改动为主，不是完整上游源码镜像。完整源码请参考上游 Chatbox 项目，本仓库提供 patch 方便对照和复现。
 
 ## APK 信息
 
 | 项目 | 内容 |
 | --- | --- |
-| 文件名 | chatbox-enter-newline-disable-thinking-button-send-debug.apk |
+| 文件名 | `chatbox-enter-newline-disable-thinking-button-send-debug.apk` |
 | 大小 | 30.88 MB |
-| SHA256 | 95ABF9C8A4EDE6ABACFD9FA5DC27B8334C6652D51AB611C9513872188D4CFF23 |
-| 包名 | xyz.chatboxapp.ce |
-| 应用名 | Chatbox |
+| SHA256 | `95ABF9C8A4EDE6ABACFD9FA5DC27B8334C6652D51AB611C9513872188D4CFF23` |
+| 包名 | `xyz.chatboxapp.ce` |
+| 应用名 | `Chatbox` |
 | 签名 | Android debug 签名 |
 
 ## 安装方法
 
-`powershell
+```powershell
 adb install -r .\chatbox-enter-newline-disable-thinking-button-send-debug.apk
-`
+```
 
 如果手机上已有不同签名版本，可能需要先卸载旧版再安装。
 
@@ -40,10 +53,10 @@ adb install -r .\chatbox-enter-newline-disable-thinking-button-send-debug.apk
 
 Codex 在本地完成了以下验证：
 
-- 针对性测试:7 test files / 26 tests passed
-- 前端 Android/mobile 构建:通过
-- Gradle:ssembleDebug 构建成功
-- APK:已通过pksigner verify --print-certs 校验
+- 针对性测试：`7 test files / 26 tests passed`
+- 前端 Android/mobile 构建：通过
+- Gradle：`assembleDebug` 构建成功
+- APK：已通过 `apksigner verify --print-certs` 校验
 
 ## 说明
 
