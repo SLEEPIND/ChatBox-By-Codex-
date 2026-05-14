@@ -1,0 +1,1664 @@
+diff --git a/capacitor.config.ts b/capacitor.config.ts
+new file mode 100644
+index 0000000..d6d8083
+--- /dev/null
++++ b/capacitor.config.ts
+@@ -0,0 +1,17 @@
++import type { CapacitorConfig } from '@capacitor/cli'
++
++const config: CapacitorConfig = {
++  appId: 'xyz.chatboxapp.ce',
++  appName: 'Chatbox',
++  webDir: 'release/app/dist/renderer',
++  android: {
++    adjustMarginsForEdgeToEdge: 'auto',
++  },
++  plugins: {
++    Keyboard: {
++      resizeOnFullScreen: true,
++    },
++  },
++}
++
++export default config
+diff --git a/src/android-edge-to-edge.test.ts b/src/android-edge-to-edge.test.ts
+new file mode 100644
+index 0000000..1c3c699
+--- /dev/null
++++ b/src/android-edge-to-edge.test.ts
+@@ -0,0 +1,12 @@
++import { describe, expect, it } from 'vitest'
++import config from '../capacitor.config'
++
++describe('Capacitor Android edge-to-edge handling', () => {
++  it('lets Capacitor apply Android system bar margins instead of drawing the WebView under the status bar', () => {
++    expect(config.android?.adjustMarginsForEdgeToEdge).toBe('auto')
++  })
++
++  it('enables the Android keyboard resize workaround used by edge-to-edge WebViews', () => {
++    expect(config.plugins?.Keyboard?.resizeOnFullScreen).toBe(true)
++  })
++})
+diff --git a/src/renderer/components/InputBox/InputBox.tsx b/src/renderer/components/InputBox/InputBox.tsx
+index 22788a5..a09a648 100644
+--- a/src/renderer/components/InputBox/InputBox.tsx
++++ b/src/renderer/components/InputBox/InputBox.tsx
+@@ -21,6 +21,7 @@ import {
+ } from '@shared/file-extensions'
+ import { getModel } from '@shared/providers'
+ import { formatNumber } from '@shared/utils'
++import { shouldSubmitInputOnShortcut } from '@shared/utils/input-shortcuts'
+ import {
+   IconAdjustmentsHorizontal,
+   IconAlertCircle,
+@@ -79,13 +80,7 @@ import { useUIStore } from '@/stores/uiStore'
+ import { delay } from '@/utils'
+ import { featureFlags } from '@/utils/feature-flags'
+ import { trackEvent } from '@/utils/track'
+-import {
+-  type KnowledgeBase,
+-  type Message,
+-  ModelProviderEnum,
+-  type SessionType,
+-  type ShortcutSendValue,
+-} from '../../../shared/types'
++import { type KnowledgeBase, type Message, ModelProviderEnum, type SessionType } from '../../../shared/types'
+ import * as dom from '../../hooks/dom'
+ import * as sessionHelpers from '../../stores/sessionHelpers'
+ import * as toastActions from '../../stores/toastActions'
+@@ -542,31 +537,21 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
+     )
+ 
+     const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+-      const isPressedHash: Record<ShortcutSendValue, boolean> = {
+-        '': false,
+-        Enter: event.keyCode === 13 && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey,
+-        'CommandOrControl+Enter': event.keyCode === 13 && (event.ctrlKey || event.metaKey) && !event.shiftKey,
+-        'Ctrl+Enter': event.keyCode === 13 && event.ctrlKey && !event.shiftKey,
+-        'Command+Enter': event.keyCode === 13 && event.metaKey,
+-        'Shift+Enter': event.keyCode === 13 && event.shiftKey,
+-        'Ctrl+Shift+Enter': event.keyCode === 13 && event.ctrlKey && event.shiftKey,
+-      }
+-
+       // 发送消息
+-      if (isPressedHash[shortcuts.inputBoxSendMessage]) {
++      if (shouldSubmitInputOnShortcut({ shortcut: shortcuts.inputBoxSendMessage, ...event })) {
+         if (platform.type === 'mobile' && isSmallScreen && shortcuts.inputBoxSendMessage === 'Enter') {
+           // 移动端点击回车不会发送消息
+           return
+         }
+         event.preventDefault()
+-        handleSubmit()
++        void handleSubmit()
+         return
+       }
+ 
+       // 发送消息但不生成回复
+-      if (isPressedHash[shortcuts.inputBoxSendMessageWithoutResponse]) {
++      if (shouldSubmitInputOnShortcut({ shortcut: shortcuts.inputBoxSendMessageWithoutResponse, ...event })) {
+         event.preventDefault()
+-        handleSubmit(false)
++        void handleSubmit(false)
+         return
+       }
+ 
+diff --git a/src/renderer/components/settings/OpenAIReasoningEffortControl.tsx b/src/renderer/components/settings/OpenAIReasoningEffortControl.tsx
+new file mode 100644
+index 0000000..454efec
+--- /dev/null
++++ b/src/renderer/components/settings/OpenAIReasoningEffortControl.tsx
+@@ -0,0 +1,65 @@
++import { Flex, Stack, Text, Tooltip } from '@mantine/core'
++import type { ReasoningEffort } from '@shared/types/settings'
++import { IconInfoCircle } from '@tabler/icons-react'
++import { useCallback, useMemo } from 'react'
++import { useTranslation } from 'react-i18next'
++import { ScalableIcon } from '@/components/common/ScalableIcon'
++import SegmentedControl from '@/components/common/SegmentedControl'
++
++interface OpenAIReasoningEffortControlProps {
++  value?: ReasoningEffort
++  onChange: (reasoningEffort: ReasoningEffort | undefined) => void
++}
++
++export default function OpenAIReasoningEffortControl({ value, onChange }: OpenAIReasoningEffortControlProps) {
++  const { t } = useTranslation()
++
++  const reasoningEffortOptions = useMemo(
++    () => [
++      { label: t('Not set'), value: 'null' },
++      { label: t('Disable thinking'), value: 'disabled' },
++      { label: t('Low'), value: 'low' },
++      { label: t('Medium'), value: 'medium' },
++      { label: t('High'), value: 'high' },
++      { label: t('XHigh'), value: 'xhigh' },
++    ],
++    [t]
++  )
++
++  const handleReasoningEffortChange = useCallback(
++    (nextValue: string) => {
++      onChange(nextValue === 'null' ? undefined : (nextValue as ReasoningEffort))
++    },
++    [onChange]
++  )
++
++  return (
++    <Stack gap="md" style={{ minWidth: 0 }}>
++      <Flex align="center" gap="xs">
++        <Text size="sm" fw="600">
++          {t('Thinking Effort')}
++        </Text>
++        <Tooltip
++          label={t('Thinking Effort is sent to providers that accept reasoning_effort')}
++          withArrow={true}
++          maw={320}
++          className="!whitespace-normal"
++          zIndex={3000}
++          events={{ hover: true, focus: true, touch: true }}
++        >
++          <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
++        </Tooltip>
++      </Flex>
++
++      <div style={{ minWidth: 0, overflowX: 'auto' }}>
++        <SegmentedControl
++          key="reasoning-effort-control"
++          value={value ?? 'null'}
++          onChange={handleReasoningEffortChange}
++          data={reasoningEffortOptions}
++          fullWidth={false}
++        />
++      </div>
++    </Stack>
++  )
++}
+diff --git a/src/renderer/i18n/locales/en/translation.json b/src/renderer/i18n/locales/en/translation.json
+index 5d21c51..eb0588c 100644
+--- a/src/renderer/i18n/locales/en/translation.json
++++ b/src/renderer/i18n/locales/en/translation.json
+@@ -382,6 +382,7 @@
+   "Hey! Welcome to Chatbox, your personal AI assistant.\n\nBefore we begin, I'd like to know a bit about your experience so I can provide better guidance.\n\nHave you used AI chat tools before?": "Hey! Welcome to Chatbox, your personal AI assistant.\n\nBefore we begin, I'd like to know a bit about your experience so I can provide better guidance.\n\nHave you used AI chat tools before?",
+   "Hide": "Hide",
+   "High": "High",
++  "XHigh": "XHigh",
+   "History": "History",
+   "Home Page": "Home Page",
+   "Homepage": "Homepage",
+@@ -820,6 +821,8 @@
+   "Thinking Budget only works for Gemini 2.5 models": "Thinking Budget only works for Gemini 2.5 models",
+   "Thinking Effort": "Thinking Effort",
+   "Thinking Effort only works for OpenAI o-series models": "Thinking Effort only works for OpenAI o-series models",
++  "Thinking Effort only works for OpenAI reasoning models": "Thinking Effort only works for OpenAI reasoning models",
++  "Thinking Effort is sent to providers that accept reasoning_effort": "Thinking Effort is sent to providers that accept reasoning_effort",
+   "Thinking Level": "Thinking Level",
+   "Thinking Level only works for Gemini 3 models": "Thinking Level only works for Gemini 3 models",
+   "Third-party cloud parsing service, supports PDF and most Office files. Requires API token.": "Third-party cloud parsing service, supports PDF and most Office files. Requires API token.",
+@@ -934,5 +937,9 @@
+   "Your HTML content has been published. You can access it via the link below.": "Your HTML content has been published. You can access it via the link below.",
+   "Your license has expired.": "Your license has expired.",
+   "Your license has expired. You can continue using your quota pack.": "Your license has expired. You can continue using your quota pack.",
+-  "Your rating on the App Store would help make Chatbox even better!": "Your rating on the App Store would help make Chatbox even better!"
+-}
+\ No newline at end of file
++  "Your rating on the App Store would help make Chatbox even better!": "Your rating on the App Store would help make Chatbox even better!",
++  "Reasoning effort debug logging": "Reasoning effort debug logging",
++  "Log only reasoning effort request parameters to help verify whether the option is sent.": "Log only reasoning effort request parameters to help verify whether the option is sent. Search adb logcat for reasoning-effort-debug.",
++  "Disable thinking": "Disable thinking",
++  "[Enter] line break, use the send button to send": "[Enter] line break, use the send button to send"
++}
+diff --git a/src/renderer/i18n/locales/zh-Hans/translation.json b/src/renderer/i18n/locales/zh-Hans/translation.json
+index 0a45fdb..5a926c4 100644
+--- a/src/renderer/i18n/locales/zh-Hans/translation.json
++++ b/src/renderer/i18n/locales/zh-Hans/translation.json
+@@ -435,6 +435,7 @@
+   "Hey! Welcome to Chatbox, your personal AI assistant.\n\nBefore we begin, I'd like to know a bit about your experience so I can provide better guidance.\n\nHave you used AI chat tools before?": "嘿！欢迎使用 Chatbox，您的 AI 向导助手小柴！\n\n在开始之前，我想先了解一下您的使用经验，以便为您提供更好的指导。\n\n您以前使用过一站式 AI 聊天工具吗？",
+   "Hide": "隐藏",
+   "High": "高",
++  "XHigh": "超高",
+   "History": "历史记录",
+   "Home Page": "主页",
+   "Homepage": "首页",
+@@ -930,6 +931,8 @@
+   "Thinking Budget only works for Gemini 2.5 models": "思考预算仅适用于 Gemini 2.5 模型",
+   "Thinking Effort": "思考程度",
+   "Thinking Effort only works for OpenAI o-series models": "思考仅适用于 OpenAI o 系列模型",
++  "Thinking Effort only works for OpenAI reasoning models": "思考程度仅适用于支持推理的 OpenAI 模型",
++  "Thinking Effort is sent to providers that accept reasoning_effort": "设置后会向支持 reasoning_effort 的提供方发送思考强度",
+   "Thinking Level": "思考级别",
+   "Thinking Level only works for Gemini 3 models": "思考级别仅适用于 Gemini 3 模型",
+   "Third-party cloud parsing service, supports PDF and most Office files. Requires API token.": "第三方云解析服务，支持 PDF 和大多数 Office 文件。需要 API token。",
+@@ -1069,5 +1072,9 @@
+   "Your license has expired.": "您的许可证已过期。",
+   "Your license has expired. Please check your subscription or purchase a new one.": "您的 license 已过期。请检查您的订阅或重新购买。",
+   "Your license has expired. You can continue using your quota pack.": "您的许可证已过期。您可以继续使用您的配额包。",
+-  "Your rating on the App Store would help make Chatbox even better!": "您的 App Store 评分将帮助 Chatbox 变得更好！"
+-}
+\ No newline at end of file
++  "Your rating on the App Store would help make Chatbox even better!": "您的 App Store 评分将帮助 Chatbox 变得更好！",
++  "Reasoning effort debug logging": "思考强度调试日志",
++  "Log only reasoning effort request parameters to help verify whether the option is sent.": "仅记录思考强度请求参数，用于确认选项是否已发送。可以用 adb logcat 查看 reasoning-effort-debug。",
++  "Disable thinking": "关闭思考",
++  "[Enter] line break, use the send button to send": "[回车键] 换行，点击发送按钮才发送"
++}
+diff --git a/src/renderer/modals/SessionSettings.tsx b/src/renderer/modals/SessionSettings.tsx
+index 6c03dd7..9c17d99 100644
+--- a/src/renderer/modals/SessionSettings.tsx
++++ b/src/renderer/modals/SessionSettings.tsx
+@@ -28,19 +28,26 @@ import {
+   getGoogleThinkingMode,
+   getSupportedGoogleThinkingLevels,
+ } from '@shared/utils/google-thinking'
++import {
++  getReasoningEffort,
++  getReasoningEffortDebugLogging,
++  updateReasoningEffortDebugLoggingProviderOptions,
++  updateReasoningEffortProviderOptions,
++} from '@shared/utils/reasoning-effort'
+ import { IconInfoCircle, IconTrash, IconUpload } from '@tabler/icons-react'
+ import { pick } from 'lodash'
+ import { useCallback, useEffect, useMemo, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+-import { AssistantAvatar } from '@/components/common/Avatar'
+ import { AdaptiveModal } from '@/components/common/AdaptiveModal'
++import { AssistantAvatar } from '@/components/common/Avatar'
+ import LazyNumberInput from '@/components/common/LazyNumberInput'
+ import MaxContextMessageCountSlider from '@/components/common/MaxContextMessageCountSlider'
++import { ScalableIcon } from '@/components/common/ScalableIcon'
++import SegmentedControl from '@/components/common/SegmentedControl'
+ import SliderWithInput from '@/components/common/SliderWithInput'
+ import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
+ import ImageStyleSelect from '@/components/ImageStyleSelect'
+-import { ScalableIcon } from '@/components/common/ScalableIcon'
+-import SegmentedControl from '@/components/common/SegmentedControl'
++import OpenAIReasoningEffortControl from '@/components/settings/OpenAIReasoningEffortControl'
+ import { useIsSmallScreen } from '@/hooks/useScreenChange'
+ import { trackingEvent } from '@/packages/event'
+ import { StorageKeyGenerator } from '@/storage/StoreStorage'
+@@ -597,7 +604,7 @@ function ClaudeProviderConfig({
+   )
+ }
+ 
+-function OpenAIProviderConfig({
++function ReasoningEffortProviderConfig({
+   settings,
+   onSettingsChange,
+ }: {
+@@ -605,61 +612,39 @@ function OpenAIProviderConfig({
+   onSettingsChange: (data: Session['settings']) => void
+ }) {
+   const { t } = useTranslation()
+-  const providerOptions = settings?.providerOptions?.openai
+-
+-  // Memoize options to prevent recreation on every render
+-  const reasoningEffortOptions = useMemo(
+-    () => [
+-      { label: t('Disabled'), value: 'null' },
+-      { label: t('Low'), value: 'low' },
+-      { label: t('Medium'), value: 'medium' },
+-      { label: t('High'), value: 'high' },
+-    ],
+-    [t]
+-  )
+-
+-  const handleReasoningEffortChange = useCallback(
+-    (value: string) => {
+-      const reasoningEffort = value === 'null' ? undefined : (value as 'low' | 'medium' | 'high')
+-      onSettingsChange({
+-        providerOptions: {
+-          openai: { reasoningEffort },
+-        },
+-      })
+-    },
+-    [onSettingsChange]
+-  )
+-
+-  // Simplify value calculation to avoid instability
+-  const currentValue = useMemo(() => {
+-    const effort = providerOptions?.reasoningEffort
+-    return effort === undefined ? 'null' : effort
+-  }, [providerOptions?.reasoningEffort])
+ 
+   return (
+     <Stack gap="md">
+-      <Flex align="center" gap="xs">
+-        <Text size="sm" fw="600">
+-          {t('Thinking Effort')}
+-        </Text>
+-        <Tooltip
+-          label={t('Thinking Effort only works for OpenAI o-series models')}
+-          withArrow={true}
+-          maw={320}
+-          className="!whitespace-normal"
+-          zIndex={3000}
+-          events={{ hover: true, focus: true, touch: true }}
+-        >
+-          <ScalableIcon icon={IconInfoCircle} size={20} className="text-chatbox-tint-tertiary" />
+-        </Tooltip>
+-      </Flex>
+-
+-      <SegmentedControl
+-        key="reasoning-effort-control"
+-        value={currentValue}
+-        onChange={handleReasoningEffortChange}
+-        data={reasoningEffortOptions}
++      <OpenAIReasoningEffortControl
++        value={getReasoningEffort(settings?.providerOptions)}
++        onChange={(reasoningEffort) => {
++          onSettingsChange({
++            providerOptions: updateReasoningEffortProviderOptions(settings?.providerOptions, reasoningEffort),
++          })
++        }}
+       />
++
++      <Flex align="center" justify="space-between" gap="md">
++        <Stack gap={4} style={{ minWidth: 0 }}>
++          <Text size="sm" fw="600">
++            {t('Reasoning effort debug logging')}
++          </Text>
++          <Text size="xs" c="chatbox-tertiary">
++            {t('Log only reasoning effort request parameters to help verify whether the option is sent.')}
++          </Text>
++        </Stack>
++        <Switch
++          checked={getReasoningEffortDebugLogging(settings?.providerOptions)}
++          onChange={(event) => {
++            onSettingsChange({
++              providerOptions: updateReasoningEffortDebugLoggingProviderOptions(
++                settings?.providerOptions,
++                event.currentTarget.checked
++              ),
++            })
++          }}
++        />
++      </Flex>
+     </Stack>
+   )
+ }
+@@ -845,9 +830,7 @@ export function ChatConfig({
+       {settings?.provider === ModelProviderEnum.Claude && (
+         <ClaudeProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+       )}
+-      {settings?.provider === ModelProviderEnum.OpenAI && (
+-        <OpenAIProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+-      )}
++      <ReasoningEffortProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+       {settings?.provider === ModelProviderEnum.Gemini && (
+         <GoogleProviderConfig settings={settings} onSettingsChange={onSettingsChange} />
+       )}
+diff --git a/src/renderer/packages/translation.ts b/src/renderer/packages/translation.ts
+new file mode 100644
+index 0000000..b17e642
+--- /dev/null
++++ b/src/renderer/packages/translation.ts
+@@ -0,0 +1,7 @@
++export async function translateTexts(
++  texts: string[],
++  _targetLang: string,
++  _options?: { sourceLang?: string }
++): Promise<string[]> {
++  return texts
++}
+diff --git a/src/renderer/routes/settings/chat.tsx b/src/renderer/routes/settings/chat.tsx
+index c99234e..1c5403a 100644
+--- a/src/renderer/routes/settings/chat.tsx
++++ b/src/renderer/routes/settings/chat.tsx
+@@ -1,5 +1,11 @@
+ import { Box, Button, FileButton, Flex, Slider, Stack, Switch, Text, Textarea, Title, Tooltip } from '@mantine/core'
+ import { chatSessionSettings, getDefaultPrompt } from '@shared/defaults'
++import {
++  getReasoningEffort,
++  getReasoningEffortDebugLogging,
++  updateReasoningEffortDebugLoggingProviderOptions,
++  updateReasoningEffortProviderOptions,
++} from '@shared/utils/reasoning-effort'
+ import { IconInfoCircle } from '@tabler/icons-react'
+ import { createFileRoute } from '@tanstack/react-router'
+ import { useMemo } from 'react'
+@@ -11,6 +17,7 @@ import { MessageLayoutSelector } from '@/components/common/MessageLayoutPreview'
+ import { ScalableIcon } from '@/components/common/ScalableIcon'
+ import SliderWithInput from '@/components/common/SliderWithInput'
+ import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
++import OpenAIReasoningEffortControl from '@/components/settings/OpenAIReasoningEffortControl'
+ import storage from '@/storage'
+ import { StorageKeyGenerator } from '@/storage/StoreStorage'
+ import { useSettingsStore } from '@/stores/settingsStore'
+@@ -164,6 +171,38 @@ export function RouteComponent() {
+           onChange={(v) => setSettings({ maxContextMessageCount: v })}
+         />
+ 
++        {/* Thinking Effort */}
++        <OpenAIReasoningEffortControl
++          value={getReasoningEffort(settings.providerOptions)}
++          onChange={(reasoningEffort) =>
++            setSettings({
++              providerOptions: updateReasoningEffortProviderOptions(settings.providerOptions, reasoningEffort),
++            })
++          }
++        />
++
++        <Flex align="center" justify="space-between" gap="md">
++          <Stack gap={4} style={{ minWidth: 0 }}>
++            <Text size="sm" fw="600">
++              {t('Reasoning effort debug logging')}
++            </Text>
++            <Text size="xs" c="chatbox-tertiary">
++              {t('Log only reasoning effort request parameters to help verify whether the option is sent.')}
++            </Text>
++          </Stack>
++          <Switch
++            checked={getReasoningEffortDebugLogging(settings.providerOptions)}
++            onChange={(event) =>
++              setSettings({
++                providerOptions: updateReasoningEffortDebugLoggingProviderOptions(
++                  settings.providerOptions,
++                  event.currentTarget.checked
++                ),
++              })
++            }
++          />
++        </Flex>
++
+         {/* Temperature */}
+         <Stack gap="xxs">
+           <Flex align="center" gap="xs">
+diff --git a/src/renderer/setup/mobile_safe_area.ts b/src/renderer/setup/mobile_safe_area.ts
+index b5c4908..96b5c51 100644
+--- a/src/renderer/setup/mobile_safe_area.ts
++++ b/src/renderer/setup/mobile_safe_area.ts
+@@ -3,37 +3,47 @@
+ // 通过这些变量，可以在css中设置安全区域的padding，margin等，来规避异形屏的显示问题
+ // 为了达到最好的效果，在 html 的 meta 标签中设置 viewport-fit=cover
+ 
+-import { SafeArea } from 'capacitor-plugin-safe-area'
+ import { Keyboard } from '@capacitor/keyboard'
++import { SafeArea } from 'capacitor-plugin-safe-area'
+ 
+-SafeArea.getSafeAreaInsets().then(({ insets }) => {
++function applySafeAreaInsets(insets: Record<string, number>) {
+   for (const [key, value] of Object.entries(insets)) {
+     document.documentElement.style.setProperty(`--mobile-safe-area-inset-${key}`, `${value}px`)
+   }
+-})
++}
+ 
+-SafeArea.getStatusBarHeight().then(({ statusBarHeight }) => {
+-  // console.log(statusBarHeight, 'statusbarHeight');
+-})
+-;(async () => {
++function applyStatusBarHeightFallback(statusBarHeight: number) {
++  const currentTop = Number.parseFloat(
++    getComputedStyle(document.documentElement).getPropertyValue('--mobile-safe-area-inset-top')
++  )
++  const nextTop = Math.max(Number.isFinite(currentTop) ? currentTop : 0, statusBarHeight || 0)
++  document.documentElement.style.setProperty('--mobile-safe-area-inset-top', `${nextTop}px`)
++}
++
++async function refreshSafeAreaInsets() {
++  const { insets } = await SafeArea.getSafeAreaInsets()
++  applySafeAreaInsets(insets)
++  const { statusBarHeight } = await SafeArea.getStatusBarHeight()
++  applyStatusBarHeightFallback(statusBarHeight)
++}
++
++void refreshSafeAreaInsets()
++
++void (async () => {
+   // when safe-area changed
+-  const eventListener = await SafeArea.addListener('safeAreaChanged', (data) => {
++  await SafeArea.addListener('safeAreaChanged', (data) => {
+     const { insets } = data
+-    for (const [key, value] of Object.entries(insets)) {
+-      document.documentElement.style.setProperty(`--mobile-safe-area-inset-${key}`, `${value}px`)
+-    }
++    applySafeAreaInsets(insets)
++    void SafeArea.getStatusBarHeight().then(({ statusBarHeight }) => {
++      applyStatusBarHeightFallback(statusBarHeight)
++    })
+   })
+-  // eventListener.remove();
+ })()
+ 
+-Keyboard.addListener('keyboardWillShow', async (info) => {
++void Keyboard.addListener('keyboardWillShow', () => {
+   document.documentElement.style.setProperty(`--mobile-safe-area-inset-bottom`, `0px`)
+ })
+ 
+-Keyboard.addListener('keyboardWillHide', () => {
+-  SafeArea.getSafeAreaInsets().then(({ insets }) => {
+-    for (const [key, value] of Object.entries(insets)) {
+-      document.documentElement.style.setProperty(`--mobile-safe-area-inset-${key}`, `${value}px`)
+-    }
+-  })
++void Keyboard.addListener('keyboardWillHide', () => {
++  void refreshSafeAreaInsets()
+ })
+diff --git a/src/renderer/stores/defaultChatSessionSettings.test.ts b/src/renderer/stores/defaultChatSessionSettings.test.ts
+new file mode 100644
+index 0000000..6be5a59
+--- /dev/null
++++ b/src/renderer/stores/defaultChatSessionSettings.test.ts
+@@ -0,0 +1,60 @@
++import { ModelProviderEnum, type Settings } from '@shared/types'
++import { describe, expect, it } from 'vitest'
++import { buildDefaultChatSessionSettings } from './defaultChatSessionSettings'
++
++describe('buildDefaultChatSessionSettings', () => {
++  it('copies the global OpenAI reasoning effort into new chat session settings', () => {
++    const result = buildDefaultChatSessionSettings(
++      {
++        maxContextMessageCount: 12,
++        temperature: 0.4,
++        topP: 0.8,
++        defaultChatModel: {
++          provider: ModelProviderEnum.OpenAI,
++          model: 'gpt-5.4',
++        },
++        providerOptions: {
++          openai: {
++            reasoningEffort: 'xhigh',
++          },
++        },
++      } as Settings,
++      {
++        provider: ModelProviderEnum.ChatboxAI,
++        modelId: 'chatboxai-4',
++      }
++    )
++
++    expect(result).toEqual({
++      maxContextMessageCount: 12,
++      temperature: 0.4,
++      topP: 0.8,
++      provider: ModelProviderEnum.OpenAI,
++      modelId: 'gpt-5.4',
++      providerOptions: {
++        openai: {
++          reasoningEffort: 'xhigh',
++        },
++      },
++    })
++  })
++
++  it('leaves providerOptions unset when no global reasoning effort is configured', () => {
++    const result = buildDefaultChatSessionSettings(
++      {
++        maxContextMessageCount: 12,
++      } as Settings,
++      {
++        provider: ModelProviderEnum.OpenAI,
++        modelId: 'gpt-5.4',
++      }
++    )
++
++    expect(result).toMatchObject({
++      maxContextMessageCount: 12,
++      provider: ModelProviderEnum.OpenAI,
++      modelId: 'gpt-5.4',
++    })
++    expect(result).not.toHaveProperty('providerOptions')
++  })
++})
+diff --git a/src/renderer/stores/defaultChatSessionSettings.ts b/src/renderer/stores/defaultChatSessionSettings.ts
+new file mode 100644
+index 0000000..014b7d3
+--- /dev/null
++++ b/src/renderer/stores/defaultChatSessionSettings.ts
+@@ -0,0 +1,21 @@
++import type { SessionSettings, Settings } from '@shared/types'
++
++type ChatModelSelection = Pick<SessionSettings, 'provider' | 'modelId'> | undefined
++
++export function buildDefaultChatSessionSettings(
++  settings: Settings,
++  lastUsedChatModel: ChatModelSelection
++): SessionSettings {
++  return {
++    maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
++    temperature: settings.temperature || undefined,
++    topP: settings.topP || undefined,
++    ...(settings.providerOptions ? { providerOptions: settings.providerOptions } : {}),
++    ...(settings.defaultChatModel
++      ? {
++          provider: settings.defaultChatModel.provider,
++          modelId: settings.defaultChatModel.model,
++        }
++      : lastUsedChatModel || {}),
++  }
++}
+diff --git a/src/renderer/stores/sessionHelpers.ts b/src/renderer/stores/sessionHelpers.ts
+index a71e3cb..54160b0 100644
+--- a/src/renderer/stores/sessionHelpers.ts
++++ b/src/renderer/stores/sessionHelpers.ts
+@@ -25,6 +25,7 @@ import { StorageKey, StorageKeyGenerator } from '@/storage/StoreStorage'
+ import { migrateSession, sortSessions } from '@/utils/session-utils'
+ import * as defaults from '../../shared/defaults'
+ import { createMessage, type Message, SessionSettingsSchema, TOKEN_CACHE_KEYS } from '../../shared/types'
++import { buildDefaultChatSessionSettings } from './defaultChatSessionSettings'
+ import { lastUsedModelStore } from './lastUsedModelStore'
+ import * as settingActions from './settingActions'
+ import { getPlatformDefaultDocumentParser, settingsStore } from './settingsStore'
+@@ -585,17 +586,7 @@ export function initEmptyChatSession(): Omit<Session, 'id'> {
+     name: 'Untitled',
+     type: 'chat',
+     messages: [],
+-    settings: {
+-      maxContextMessageCount: settings.maxContextMessageCount ?? Number.MAX_SAFE_INTEGER,
+-      temperature: settings.temperature || undefined,
+-      topP: settings.topP || undefined,
+-      ...(settings.defaultChatModel
+-        ? {
+-            provider: settings.defaultChatModel.provider,
+-            modelId: settings.defaultChatModel.model,
+-          }
+-        : lastUsedChatModel),
+-    },
++    settings: buildDefaultChatSessionSettings(settings, lastUsedChatModel),
+   }
+   if (settings.defaultPrompt) {
+     newSession.messages.push(createMessage('system', settings.defaultPrompt || defaults.getDefaultPrompt()))
+diff --git a/src/shared/models/openai-compatible.ts b/src/shared/models/openai-compatible.ts
+index fcaff61..8ad4bd4 100644
+--- a/src/shared/models/openai-compatible.ts
++++ b/src/shared/models/openai-compatible.ts
+@@ -2,9 +2,10 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+ import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
+ import type { ProviderModelInfo, ToolUseScope } from '../types'
+ import type { ModelDependencies } from '../types/adapters'
++import { buildOpenAICompatibleReasoningProviderOptions, logReasoningEffortRequest } from '../utils/reasoning-effort'
+ import AbstractAISDKModel from './abstract-ai-sdk'
+ import { ApiError } from './errors'
+-import type { ModelInterface } from './types'
++import type { CallChatCompletionOptions, ModelInterface } from './types'
+ import { createFetchWithProxy } from './utils/fetch-proxy'
+ 
+ export interface OpenAICompatibleSettings {
+@@ -28,11 +29,15 @@ export default abstract class OpenAICompatible extends AbstractAISDKModel implem
+     super(options, dependencies)
+   }
+ 
+-  protected getCallSettings() {
++  protected getCallSettings(options: CallChatCompletionOptions) {
++    const providerOptions = buildOpenAICompatibleReasoningProviderOptions(options.providerOptions, this.name)
++    logReasoningEffortRequest(this.name, options.providerOptions, providerOptions)
++
+     return {
+       temperature: this.options.temperature,
+       topP: this.options.topP,
+       maxOutputTokens: this.options.maxOutputTokens,
++      providerOptions,
+     }
+   }
+ 
+diff --git a/src/shared/oauth/index.ts b/src/shared/oauth/index.ts
+index 1767827..da893ee 100644
+--- a/src/shared/oauth/index.ts
++++ b/src/shared/oauth/index.ts
+@@ -11,6 +11,41 @@ export interface OAuthProviderInfo {
+   flowType: 'callback' | 'code-paste' | 'device-code'
+ }
+ 
++export interface OAuthResult {
++  success: boolean
++  credentials?: ProviderSettings['oauth']
++  error?: string
++}
++
++export interface OAuthStartResult {
++  success: boolean
++  authUrl?: string
++  codeVerifier?: string
++  state?: string
++  error?: string
++}
++
++export interface DeviceFlowStartResult {
++  success: boolean
++  deviceCode?: string
++  userCode?: string
++  verificationUri?: string
++  verificationUriComplete?: string
++  interval?: number
++  expiresIn?: number
++  error?: string
++}
++
++export const OAuthIpcChannels = {
++  LOGIN: 'oauth:login',
++  START_LOGIN: 'oauth:start-login',
++  EXCHANGE_CODE: 'oauth:exchange-code',
++  START_DEVICE_FLOW: 'oauth:start-device-flow',
++  WAIT_DEVICE_TOKEN: 'oauth:wait-device-token',
++  REFRESH: 'oauth:refresh',
++  CANCEL: 'oauth:cancel',
++} as const
++
+ export function mergeSharedOAuthProviderSettings(
+   providerId: string,
+   providers: Record<string, ProviderSettings> | undefined
+diff --git a/src/shared/providers/definitions/models/chatboxai.ts b/src/shared/providers/definitions/models/chatboxai.ts
+index 5de8a94..1c2a9d8 100644
+--- a/src/shared/providers/definitions/models/chatboxai.ts
++++ b/src/shared/providers/definitions/models/chatboxai.ts
+@@ -10,6 +10,10 @@ import type { CallChatCompletionOptions, ModelInterface } from '../../../models/
+ import { getChatboxAPIOrigin } from '../../../request/chatboxai_pool'
+ import type { ChatboxAILicenseDetail, ProviderModelInfo } from '../../../types'
+ import type { ModelDependencies } from '../../../types/adapters'
++import {
++  buildOpenAICompatibleReasoningProviderOptions,
++  logReasoningEffortRequest,
++} from '../../../utils/reasoning-effort'
+ 
+ interface Options {
+   licenseKey?: string
+@@ -82,11 +86,15 @@ export default class ChatboxAI extends AbstractAISDKModel implements ModelInterf
+     }
+   }
+ 
+-  protected getCallSettings() {
++  protected getCallSettings(options: CallChatCompletionOptions) {
++    const providerOptions = buildOpenAICompatibleReasoningProviderOptions(options.providerOptions, 'ChatboxAI')
++    logReasoningEffortRequest('ChatboxAI', options.providerOptions, providerOptions)
++
+     return {
+       temperature: this.options.temperature,
+       topP: this.options.topP,
+       maxOutputTokens: this.options.maxOutputTokens,
++      providerOptions,
+     }
+   }
+ 
+diff --git a/src/shared/providers/definitions/models/custom-openai.ts b/src/shared/providers/definitions/models/custom-openai.ts
+index c496b84..9e3c72c 100644
+--- a/src/shared/providers/definitions/models/custom-openai.ts
++++ b/src/shared/providers/definitions/models/custom-openai.ts
+@@ -7,6 +7,10 @@ import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+ import type { ProviderModelInfo } from '../../../types'
+ import type { ModelDependencies } from '../../../types/adapters'
+ import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
++import {
++  buildOpenAICompatibleReasoningProviderOptions,
++  logReasoningEffortRequest,
++} from '../../../utils/reasoning-effort'
+ 
+ interface Options {
+   apiKey: string
+@@ -25,18 +29,25 @@ type FetchFunction = typeof globalThis.fetch
+ export default class CustomOpenAI extends AbstractAISDKModel {
+   public name = 'Custom OpenAI'
+ 
+-  constructor(public options: Options, dependencies: ModelDependencies) {
++  constructor(
++    public options: Options,
++    dependencies: ModelDependencies
++  ) {
+     super(options, dependencies)
+     const { apiHost, apiPath } = normalizeOpenAIApiHostAndPath(options)
+     this.options = { ...options, apiHost, apiPath }
+   }
+ 
+-  protected getCallSettings() {
++  protected getCallSettings(options: CallChatCompletionOptions) {
++    const providerOptions = buildOpenAICompatibleReasoningProviderOptions(options.providerOptions, this.name)
++    logReasoningEffortRequest(this.name, options.providerOptions, providerOptions)
++
+     return {
+       temperature: this.options.temperature,
+       topP: this.options.topP,
+       maxOutputTokens: this.options.maxOutputTokens,
+       stream: this.options.stream,
++      providerOptions,
+     }
+   }
+ 
+diff --git a/src/shared/providers/definitions/models/deepseek.test.ts b/src/shared/providers/definitions/models/deepseek.test.ts
+new file mode 100644
+index 0000000..7704794
+--- /dev/null
++++ b/src/shared/providers/definitions/models/deepseek.test.ts
+@@ -0,0 +1,111 @@
++import type { CallChatCompletionOptions } from '@shared/models/types'
++import type { ModelDependencies } from '@shared/types/adapters'
++import type { ProviderModelInfo } from '@shared/types/settings'
++import type { SentryScope } from '@shared/utils/sentry_adapter'
++import { describe, expect, it, vi } from 'vitest'
++import DeepSeek from './deepseek'
++
++class TestDeepSeek extends DeepSeek {
++  public exposeCallSettings(options: CallChatCompletionOptions = {}) {
++    return this.getCallSettings(options)
++  }
++}
++
++function createDependencies(): ModelDependencies {
++  return {
++    request: {
++      apiRequest: vi.fn(),
++      fetchWithOptions: vi.fn(),
++    },
++    storage: {
++      saveImage: vi.fn(),
++      getImage: vi.fn(),
++    },
++    sentry: {
++      captureException: vi.fn(),
++      withScope: vi.fn((callback: (scope: SentryScope) => void) =>
++        callback({
++          setTag: vi.fn(),
++          setExtra: vi.fn(),
++        })
++      ),
++    },
++    getRemoteConfig: vi.fn(),
++    platformType: 'desktop',
++  }
++}
++
++function createModel(model: Partial<ProviderModelInfo> = {}) {
++  return new TestDeepSeek(
++    {
++      apiKey: 'test-key',
++      model: {
++        modelId: 'deepseek-v4-pro',
++        type: 'chat',
++        capabilities: ['reasoning', 'tool_use'],
++        ...model,
++      },
++    },
++    createDependencies()
++  )
++}
++
++describe('DeepSeek call settings', () => {
++  it('passes generic reasoning effort as DeepSeek thinking extra body', () => {
++    const deepseek = createModel()
++
++    const settings = deepseek.exposeCallSettings({
++      providerOptions: {
++        reasoningEffort: 'xhigh',
++      },
++    })
++
++    expect(settings.providerOptions).toEqual({
++      openaiCompatible: {
++        reasoningEffort: 'xhigh',
++      },
++      DeepSeek: {
++        thinking: {
++          type: 'enabled',
++        },
++      },
++    })
++  })
++
++  it('keeps thinking enabled for known reasoning models when effort is unset', () => {
++    const deepseek = createModel({ modelId: 'deepseek-reasoner' })
++
++    const settings = deepseek.exposeCallSettings()
++
++    expect(settings.providerOptions).toEqual({
++      DeepSeek: {
++        thinking: {
++          type: 'enabled',
++        },
++      },
++    })
++  })
++
++  it('keeps thinking disabled when explicitly selected even for known reasoning models', () => {
++    const deepseek = createModel({ modelId: 'deepseek-reasoner' })
++
++    const settings = deepseek.exposeCallSettings({
++      providerOptions: {
++        reasoningEffort: 'disabled',
++      },
++    })
++
++    expect(settings.providerOptions).toEqual({
++      openaiCompatible: {
++        thinking: {
++          type: 'disabled',
++        },
++      },
++      DeepSeek: {
++        thinking: {
++          type: 'disabled',
++        },
++      },
++    })
++  })
++})
+diff --git a/src/shared/providers/definitions/models/deepseek.ts b/src/shared/providers/definitions/models/deepseek.ts
+index dadd162..287857f 100644
+--- a/src/shared/providers/definitions/models/deepseek.ts
++++ b/src/shared/providers/definitions/models/deepseek.ts
+@@ -1,10 +1,15 @@
+-import { createDeepSeek, type DeepSeekChatOptions } from '@ai-sdk/deepseek'
++import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+ import type { LanguageModelV3 } from '@ai-sdk/provider'
++import { extractReasoningMiddleware, wrapLanguageModel } from 'ai'
+ import AbstractAISDKModel, { type CallSettings } from '../../../models/abstract-ai-sdk'
+ import { ApiError } from '../../../models/errors'
+ import type { CallChatCompletionOptions } from '../../../models/types'
+ import type { ProviderModelInfo, ToolUseScope } from '../../../types'
+ import type { ModelDependencies } from '../../../types/adapters'
++import {
++  buildOpenAICompatibleReasoningProviderOptions,
++  logReasoningEffortRequest,
++} from '../../../utils/reasoning-effort'
+ 
+ interface Options {
+   apiKey: string
+@@ -26,17 +31,22 @@ export default class DeepSeek extends AbstractAISDKModel {
+   }
+ 
+   protected getProvider() {
+-    return createDeepSeek({
++    return createOpenAICompatible({
++      name: this.name,
+       apiKey: this.options.apiKey,
++      baseURL: 'https://api.deepseek.com',
+     })
+   }
+ 
+   protected getChatModel(_options: CallChatCompletionOptions): LanguageModelV3 {
+     const provider = this.getProvider()
+-    return provider.chat(this.options.model.modelId)
++    return wrapLanguageModel({
++      model: provider.languageModel(this.options.model.modelId),
++      middleware: extractReasoningMiddleware({ tagName: 'think' }),
++    })
+   }
+ 
+-  protected getCallSettings(_options: CallChatCompletionOptions): CallSettings {
++  protected getCallSettings(options: CallChatCompletionOptions): CallSettings {
+     const isReasonerModel = this.options.model.modelId === 'deepseek-reasoner'
+     const settings: CallSettings = {
+       maxOutputTokens: this.options.maxOutputTokens,
+@@ -48,17 +58,22 @@ export default class DeepSeek extends AbstractAISDKModel {
+       settings.topP = this.options.topP
+     }
+ 
+-    // Enable thinking for reasoner model
+-    if (this.isSupportReasoning()) {
++    const reasoningProviderOptions = buildOpenAICompatibleReasoningProviderOptions(options.providerOptions, this.name)
++
++    if (reasoningProviderOptions) {
++      settings.providerOptions = reasoningProviderOptions
++    } else if (this.isSupportReasoning()) {
+       settings.providerOptions = {
+-        deepseek: {
++        [this.name]: {
+           thinking: {
+             type: 'enabled',
+           },
+-        } satisfies DeepSeekChatOptions,
++        },
+       }
+     }
+ 
++    logReasoningEffortRequest(this.name, options.providerOptions, settings.providerOptions)
++
+     return settings
+   }
+ 
+diff --git a/src/shared/providers/definitions/models/openai-responses.test.ts b/src/shared/providers/definitions/models/openai-responses.test.ts
+index 3a68d66..093779e 100644
+--- a/src/shared/providers/definitions/models/openai-responses.test.ts
++++ b/src/shared/providers/definitions/models/openai-responses.test.ts
+@@ -61,14 +61,14 @@ describe('OpenAIResponses call settings', () => {
+     const settings = openaiResponses.exposeCallSettings({
+       providerOptions: {
+         openai: {
+-          reasoningEffort: 'high',
++          reasoningEffort: 'xhigh',
+         },
+       },
+     })
+ 
+     expect(settings.providerOptions).toEqual({
+       openai: {
+-        reasoningEffort: 'high',
++        reasoningEffort: 'xhigh',
+         store: false,
+       },
+     })
+diff --git a/src/shared/providers/definitions/models/openai-responses.ts b/src/shared/providers/definitions/models/openai-responses.ts
+index 41cbf5c..e4a73d3 100644
+--- a/src/shared/providers/definitions/models/openai-responses.ts
++++ b/src/shared/providers/definitions/models/openai-responses.ts
+@@ -7,6 +7,7 @@ import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+ import type { ProviderModelInfo } from '../../../types'
+ import type { ModelDependencies } from '../../../types/adapters'
+ import { normalizeOpenAIResponsesHostAndPath } from '../../../utils/llm_utils'
++import { buildOpenAIReasoningProviderOptions, logReasoningEffortRequest } from '../../../utils/reasoning-effort'
+ 
+ interface Options {
+   apiKey: string
+@@ -41,7 +42,15 @@ export default class OpenAIResponses extends AbstractAISDKModel {
+   }
+ 
+   protected getCallSettings(options: CallChatCompletionOptions) {
+-    const openaiProviderOptions = options.providerOptions?.openai
++    const reasoningProviderOptions = buildOpenAIReasoningProviderOptions(options.providerOptions)
++    logReasoningEffortRequest(this.name, options.providerOptions, reasoningProviderOptions)
++    const openaiProviderOptions =
++      options.providerOptions?.openai || reasoningProviderOptions?.openai
++        ? {
++            ...(options.providerOptions?.openai || {}),
++            ...(reasoningProviderOptions?.openai || {}),
++          }
++        : undefined
+ 
+     return {
+       temperature: this.options.temperature,
+diff --git a/src/shared/providers/definitions/models/openai.ts b/src/shared/providers/definitions/models/openai.ts
+index 8969ccd..6f86f13 100644
+--- a/src/shared/providers/definitions/models/openai.ts
++++ b/src/shared/providers/definitions/models/openai.ts
+@@ -7,6 +7,7 @@ import { createFetchWithProxy } from '../../../models/utils/fetch-proxy'
+ import type { ProviderModelInfo } from '../../../types'
+ import type { ModelDependencies } from '../../../types/adapters'
+ import { normalizeOpenAIApiHostAndPath } from '../../../utils/llm_utils'
++import { buildOpenAIReasoningProviderOptions, logReasoningEffortRequest } from '../../../utils/reasoning-effort'
+ 
+ interface Options {
+   apiKey: string
+@@ -64,13 +65,14 @@ export default class OpenAI extends AbstractAISDKModel {
+   }
+ 
+   protected getCallSettings(options: CallChatCompletionOptions) {
+-    const isModelSupportReasoning = this.isSupportReasoning()
+-    let providerOptions = {}
+-    if (isModelSupportReasoning) {
+-      providerOptions = {
+-        openai: options.providerOptions?.openai || {},
+-      }
++    const reasoningProviderOptions = buildOpenAIReasoningProviderOptions(options.providerOptions)
++    logReasoningEffortRequest(this.name, options.providerOptions, reasoningProviderOptions)
++    const openaiProviderOptions = {
++      ...(options.providerOptions?.openai || {}),
++      ...(reasoningProviderOptions?.openai || {}),
+     }
++    const providerOptions =
++      Object.keys(openaiProviderOptions).length > 0 ? { openai: openaiProviderOptions } : undefined
+ 
+     return {
+       temperature: this.options.temperature,
+diff --git a/src/shared/providers/index.ts b/src/shared/providers/index.ts
+index ebfa92a..cdb58f6 100644
+--- a/src/shared/providers/index.ts
++++ b/src/shared/providers/index.ts
+@@ -26,7 +26,6 @@ import './definitions/mistral-ai'
+ import './definitions/perplexity'
+ import './definitions/volcengine'
+ import './definitions/chatglm'
+-import './definitions/github-copilot'
+ import './definitions/bedrock'
+ import {
+   clearProviderRegistry,
+diff --git a/src/shared/types/settings.test.ts b/src/shared/types/settings.test.ts
+new file mode 100644
+index 0000000..9752a52
+--- /dev/null
++++ b/src/shared/types/settings.test.ts
+@@ -0,0 +1,77 @@
++import { describe, expect, it } from 'vitest'
++import { settings } from '../defaults'
++import { ProviderOptionsSchema, SessionSettingsSchema, SettingsSchema } from './settings'
++
++describe('OpenAI reasoning effort settings', () => {
++  it('accepts xhigh as an OpenAI reasoning effort provider option', () => {
++    const parsed = ProviderOptionsSchema.parse({
++      openai: {
++        reasoningEffort: 'xhigh',
++      },
++    })
++
++    expect(parsed.openai?.reasoningEffort).toBe('xhigh')
++  })
++
++  it('preserves xhigh on per-session settings', () => {
++    const parsed = SessionSettingsSchema.parse({
++      providerOptions: {
++        openai: {
++          reasoningEffort: 'xhigh',
++        },
++      },
++    })
++
++    expect(parsed.providerOptions?.openai?.reasoningEffort).toBe('xhigh')
++  })
++
++  it('preserves xhigh on global settings for new conversations', () => {
++    const parsed = SettingsSchema.parse({
++      ...settings(),
++      providerOptions: {
++        openai: {
++          reasoningEffort: 'xhigh',
++        },
++      },
++    })
++
++    expect(parsed.providerOptions?.openai?.reasoningEffort).toBe('xhigh')
++  })
++
++  it('does not persist max as a reasoning effort option', () => {
++    const parsed = ProviderOptionsSchema.parse({
++      reasoningEffort: 'max',
++      openaiCompatible: {
++        reasoningEffort: 'max',
++      },
++    })
++
++    expect(parsed.reasoningEffort).toBeUndefined()
++    expect(parsed.openaiCompatible?.reasoningEffort).toBeUndefined()
++  })
++
++  it('preserves the reasoning effort debug logging switch in session and global settings', () => {
++    const session = SessionSettingsSchema.parse({
++      providerOptions: {
++        debugReasoningEffortLogging: true,
++      },
++    })
++    const global = SettingsSchema.parse({
++      ...settings(),
++      providerOptions: {
++        debugReasoningEffortLogging: true,
++      },
++    })
++
++    expect(session.providerOptions?.debugReasoningEffortLogging).toBe(true)
++    expect(global.providerOptions?.debugReasoningEffortLogging).toBe(true)
++  })
++
++  it('preserves disabled thinking as a distinct reasoning option', () => {
++    const parsed = ProviderOptionsSchema.parse({
++      reasoningEffort: 'disabled',
++    })
++
++    expect(parsed.reasoningEffort).toBe('disabled')
++  })
++})
+diff --git a/src/shared/types/settings.ts b/src/shared/types/settings.ts
+index 39d4095..4756f6b 100644
+--- a/src/shared/types/settings.ts
++++ b/src/shared/types/settings.ts
+@@ -114,10 +114,25 @@ const ClaudeParamsSchema = z.object({
+   }),
+ })
+ 
++export const ReasoningEffortSchema = z.enum(['disabled', 'low', 'medium', 'high', 'xhigh'])
++export const OpenAIReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
++
+ const OpenAIParamsSchema = z.object({
+-  reasoningEffort: z.enum(['low', 'medium', 'high']).optional().catch(undefined),
++  reasoningEffort: OpenAIReasoningEffortSchema.optional().catch(undefined),
++})
++
++const OpenAICompatibleParamsSchema = z.object({
++  reasoningEffort: ReasoningEffortSchema.optional().catch(undefined),
++  thinking: z
++    .object({
++      type: z.enum(['enabled', 'disabled']).optional().catch(undefined),
++    })
++    .optional()
++    .catch(undefined),
+ })
+ 
++const DeepSeekParamsSchema = OpenAICompatibleParamsSchema
++
+ const GoogleParamsSchema = z.object({
+   thinkingConfig: z.object({
+     thinkingBudget: z.number().optional().catch(undefined),
+@@ -127,8 +142,12 @@ const GoogleParamsSchema = z.object({
+ })
+ 
+ export const ProviderOptionsSchema = z.object({
++  reasoningEffort: ReasoningEffortSchema.optional().catch(undefined),
++  debugReasoningEffortLogging: z.boolean().optional().catch(undefined),
+   claude: ClaudeParamsSchema.optional(),
+   openai: OpenAIParamsSchema.optional(),
++  openaiCompatible: OpenAICompatibleParamsSchema.optional(),
++  deepseek: DeepSeekParamsSchema.optional(),
+   google: GoogleParamsSchema.optional(),
+ })
+ 
+@@ -139,6 +158,7 @@ export const GlobalSessionSettingsSchema = z.object({
+   topP: z.number().optional().catch(undefined),
+   maxTokens: z.number().optional().catch(undefined),
+   stream: z.boolean().optional().catch(true),
++  providerOptions: ProviderOptionsSchema.optional().catch(undefined),
+ })
+ 
+ export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
+@@ -146,7 +166,6 @@ export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
+   modelId: z.string().optional().catch(undefined),
+   dalleStyle: z.enum(['vivid', 'natural']).optional().catch('vivid'),
+   imageGenerateNum: z.number().optional().catch(1),
+-  providerOptions: ProviderOptionsSchema.optional().catch(undefined),
+   autoCompaction: z.boolean().optional().catch(undefined),
+ })
+ 
+@@ -419,6 +438,8 @@ export type BuiltinProviderBaseInfo = z.infer<typeof BuiltinProviderBaseInfoSche
+ export type CustomProviderBaseInfo = z.infer<typeof CustomProviderBaseInfoSchema>
+ export type ClaudeParams = z.infer<typeof ClaudeParamsSchema>
+ export type OpenAIParams = z.infer<typeof OpenAIParamsSchema>
++export type OpenAIReasoningEffort = z.infer<typeof OpenAIReasoningEffortSchema>
++export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>
+ export type GoogleParams = z.infer<typeof GoogleParamsSchema>
+ export type ProviderOptions = z.infer<typeof ProviderOptionsSchema>
+ export type GlobalSessionSettings = z.infer<typeof GlobalSessionSettingsSchema>
+diff --git a/src/shared/utils/input-shortcuts.test.ts b/src/shared/utils/input-shortcuts.test.ts
+new file mode 100644
+index 0000000..148c031
+--- /dev/null
++++ b/src/shared/utils/input-shortcuts.test.ts
+@@ -0,0 +1,25 @@
++import { describe, expect, it } from 'vitest'
++import { shouldSubmitInputOnShortcut } from './input-shortcuts'
++
++describe('input shortcut handling', () => {
++  it('does not submit when plain Enter is pressed', () => {
++    expect(
++      shouldSubmitInputOnShortcut({
++        shortcut: 'Enter',
++        key: 'Enter',
++        keyCode: 13,
++      })
++    ).toBe(false)
++  })
++
++  it('does not submit from modifier based send shortcuts either', () => {
++    expect(
++      shouldSubmitInputOnShortcut({
++        shortcut: 'Ctrl+Enter',
++        key: 'Enter',
++        keyCode: 13,
++        ctrlKey: true,
++      })
++    ).toBe(false)
++  })
++})
+diff --git a/src/shared/utils/input-shortcuts.ts b/src/shared/utils/input-shortcuts.ts
+new file mode 100644
+index 0000000..eeb49c1
+--- /dev/null
++++ b/src/shared/utils/input-shortcuts.ts
+@@ -0,0 +1,33 @@
++import type { ShortcutSendValue } from '../types'
++
++type KeyboardShortcutEvent = {
++  key?: string
++  keyCode?: number
++  shiftKey?: boolean
++  ctrlKey?: boolean
++  altKey?: boolean
++  metaKey?: boolean
++}
++
++export function isEnterShortcutPressed(shortcut: ShortcutSendValue, event: KeyboardShortcutEvent): boolean {
++  const isEnter = event.key === 'Enter' || event.keyCode === 13
++  if (!isEnter) {
++    return false
++  }
++
++  return (
++    {
++      '': false,
++      Enter: !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey,
++      'CommandOrControl+Enter': (event.ctrlKey || event.metaKey) && !event.shiftKey,
++      'Ctrl+Enter': event.ctrlKey && !event.shiftKey,
++      'Command+Enter': event.metaKey,
++      'Shift+Enter': event.shiftKey,
++      'Ctrl+Shift+Enter': event.ctrlKey && event.shiftKey,
++    } satisfies Record<ShortcutSendValue, boolean>
++  )[shortcut]
++}
++
++export function shouldSubmitInputOnShortcut(_event: KeyboardShortcutEvent & { shortcut: ShortcutSendValue }): boolean {
++  return false
++}
+diff --git a/src/shared/utils/reasoning-effort.test.ts b/src/shared/utils/reasoning-effort.test.ts
+new file mode 100644
+index 0000000..ff1a762
+--- /dev/null
++++ b/src/shared/utils/reasoning-effort.test.ts
+@@ -0,0 +1,148 @@
++import { describe, expect, it } from 'vitest'
++import {
++  buildOpenAICompatibleReasoningProviderOptions,
++  buildOpenAIReasoningProviderOptions,
++  createReasoningEffortDebugPayload,
++  getReasoningEffort,
++  getReasoningEffortDebugLogging,
++  updateReasoningEffortDebugLoggingProviderOptions,
++  updateReasoningEffortProviderOptions,
++} from './reasoning-effort'
++
++describe('reasoning effort provider options', () => {
++  it('stores reasoning effort as a generic provider option and clears legacy OpenAI-only value', () => {
++    const updated = updateReasoningEffortProviderOptions(
++      {
++        openai: {
++          reasoningEffort: 'xhigh',
++        },
++        google: {
++          thinkingConfig: {
++            thinkingBudget: 1024,
++            includeThoughts: true,
++          },
++        },
++      },
++      'high'
++    )
++
++    expect(updated).toEqual({
++      reasoningEffort: 'high',
++      google: {
++        thinkingConfig: {
++          thinkingBudget: 1024,
++          includeThoughts: true,
++        },
++      },
++    })
++  })
++
++  it('reads generic reasoning effort with legacy OpenAI fallback', () => {
++    expect(getReasoningEffort({ reasoningEffort: 'medium' })).toBe('medium')
++    expect(getReasoningEffort({ openai: { reasoningEffort: 'xhigh' } })).toBe('xhigh')
++  })
++
++  it('builds OpenAI request options with xhigh unchanged', () => {
++    expect(buildOpenAIReasoningProviderOptions({ reasoningEffort: 'xhigh' })).toEqual({
++      openai: {
++        reasoningEffort: 'xhigh',
++      },
++    })
++  })
++
++  it('builds OpenAI-compatible extra body options with thinking enabled', () => {
++    expect(buildOpenAICompatibleReasoningProviderOptions({ reasoningEffort: 'xhigh' }, 'DeepSeek')).toEqual({
++      openaiCompatible: {
++        reasoningEffort: 'xhigh',
++      },
++      DeepSeek: {
++        thinking: {
++          type: 'enabled',
++        },
++      },
++    })
++  })
++
++  it('stores disabled thinking separately from an unset default', () => {
++    const updated = updateReasoningEffortProviderOptions({ reasoningEffort: 'xhigh' }, 'disabled')
++
++    expect(updated).toEqual({
++      reasoningEffort: 'disabled',
++    })
++    expect(getReasoningEffort(updated)).toBe('disabled')
++  })
++
++  it('builds OpenAI-compatible options that explicitly disable thinking without sending reasoning effort', () => {
++    expect(buildOpenAICompatibleReasoningProviderOptions({ reasoningEffort: 'disabled' }, 'DeepSeek')).toEqual({
++      openaiCompatible: {
++        thinking: {
++          type: 'disabled',
++        },
++      },
++      DeepSeek: {
++        thinking: {
++          type: 'disabled',
++        },
++      },
++    })
++  })
++
++  it('does not send OpenAI reasoning effort when thinking is disabled', () => {
++    expect(buildOpenAIReasoningProviderOptions({ reasoningEffort: 'disabled' })).toBeUndefined()
++  })
++
++  it('stores and clears reasoning effort debug logging without leaking into request options', () => {
++    expect(updateReasoningEffortDebugLoggingProviderOptions({ reasoningEffort: 'high' }, true)).toEqual({
++      reasoningEffort: 'high',
++      debugReasoningEffortLogging: true,
++    })
++    expect(getReasoningEffortDebugLogging({ debugReasoningEffortLogging: true })).toBe(true)
++    expect(
++      updateReasoningEffortDebugLoggingProviderOptions({ debugReasoningEffortLogging: true }, false)
++    ).toBeUndefined()
++    expect(
++      buildOpenAICompatibleReasoningProviderOptions(
++        { reasoningEffort: 'xhigh', debugReasoningEffortLogging: true },
++        'DeepSeek'
++      )
++    ).toEqual({
++      openaiCompatible: {
++        reasoningEffort: 'xhigh',
++      },
++      DeepSeek: {
++        thinking: {
++          type: 'enabled',
++        },
++      },
++    })
++  })
++
++  it('creates a safe debug payload with the effective reasoning parameters only', () => {
++    const requestProviderOptions = buildOpenAICompatibleReasoningProviderOptions(
++      { reasoningEffort: 'xhigh', debugReasoningEffortLogging: true },
++      'DeepSeek'
++    )
++
++    expect(
++      createReasoningEffortDebugPayload(
++        'DeepSeek',
++        { reasoningEffort: 'xhigh', debugReasoningEffortLogging: true },
++        requestProviderOptions
++      )
++    ).toEqual({
++      tag: 'reasoning-effort-debug',
++      provider: 'DeepSeek',
++      selectedReasoningEffort: 'xhigh',
++      requestProviderOptions: {
++        openaiCompatible: {
++          reasoning_effort: 'xhigh',
++        },
++        DeepSeek: {
++          thinking: {
++            type: 'enabled',
++          },
++        },
++      },
++    })
++  })
++})
+diff --git a/src/shared/utils/reasoning-effort.ts b/src/shared/utils/reasoning-effort.ts
+new file mode 100644
+index 0000000..0be0530
+--- /dev/null
++++ b/src/shared/utils/reasoning-effort.ts
+@@ -0,0 +1,183 @@
++import type { JSONValue } from 'ai'
++import type { ProviderOptions, ReasoningEffort } from '../types/settings'
++
++type RequestProviderOptions = Record<string, Record<string, JSONValue>>
++type ReasoningEffortDebugRequestProviderOptions = Record<string, Record<string, JSONValue>>
++
++const REASONING_EFFORT_DEBUG_LOG_TAG = 'reasoning-effort-debug'
++
++export function getReasoningEffort(providerOptions: ProviderOptions | undefined): ReasoningEffort | undefined {
++  return (
++    providerOptions?.reasoningEffort ??
++    providerOptions?.openai?.reasoningEffort ??
++    providerOptions?.openaiCompatible?.reasoningEffort ??
++    providerOptions?.deepseek?.reasoningEffort
++  )
++}
++
++export function updateReasoningEffortProviderOptions(
++  providerOptions: ProviderOptions | undefined,
++  reasoningEffort: ReasoningEffort | undefined
++): ProviderOptions | undefined {
++  const nextProviderOptions: ProviderOptions = { ...(providerOptions || {}) }
++
++  if (reasoningEffort) {
++    nextProviderOptions.reasoningEffort = reasoningEffort
++  } else {
++    delete nextProviderOptions.reasoningEffort
++  }
++
++  const nextOpenAIOptions = { ...(nextProviderOptions.openai || {}) }
++  delete nextOpenAIOptions.reasoningEffort
++  if (Object.keys(nextOpenAIOptions).length > 0) {
++    nextProviderOptions.openai = nextOpenAIOptions
++  } else {
++    delete nextProviderOptions.openai
++  }
++
++  const nextOpenAICompatibleOptions = { ...(nextProviderOptions.openaiCompatible || {}) }
++  delete nextOpenAICompatibleOptions.reasoningEffort
++  if (Object.keys(nextOpenAICompatibleOptions).length > 0) {
++    nextProviderOptions.openaiCompatible = nextOpenAICompatibleOptions
++  } else {
++    delete nextProviderOptions.openaiCompatible
++  }
++
++  const nextDeepSeekOptions = { ...(nextProviderOptions.deepseek || {}) }
++  delete nextDeepSeekOptions.reasoningEffort
++  if (Object.keys(nextDeepSeekOptions).length > 0) {
++    nextProviderOptions.deepseek = nextDeepSeekOptions
++  } else {
++    delete nextProviderOptions.deepseek
++  }
++
++  return Object.keys(nextProviderOptions).length > 0 ? nextProviderOptions : undefined
++}
++
++export function getReasoningEffortDebugLogging(providerOptions: ProviderOptions | undefined): boolean {
++  return providerOptions?.debugReasoningEffortLogging === true
++}
++
++export function updateReasoningEffortDebugLoggingProviderOptions(
++  providerOptions: ProviderOptions | undefined,
++  enabled: boolean
++): ProviderOptions | undefined {
++  const nextProviderOptions: ProviderOptions = { ...(providerOptions || {}) }
++
++  if (enabled) {
++    nextProviderOptions.debugReasoningEffortLogging = true
++  } else {
++    delete nextProviderOptions.debugReasoningEffortLogging
++  }
++
++  return Object.keys(nextProviderOptions).length > 0 ? nextProviderOptions : undefined
++}
++
++export function buildOpenAIReasoningProviderOptions(
++  providerOptions: ProviderOptions | undefined
++): RequestProviderOptions | undefined {
++  const reasoningEffort = getReasoningEffort(providerOptions)
++  if (!reasoningEffort || reasoningEffort === 'disabled') {
++    return undefined
++  }
++
++  return {
++    openai: {
++      reasoningEffort,
++    },
++  }
++}
++
++export function buildOpenAICompatibleReasoningProviderOptions(
++  providerOptions: ProviderOptions | undefined,
++  providerOptionsName: string
++): RequestProviderOptions | undefined {
++  const reasoningEffort = getReasoningEffort(providerOptions)
++  if (!reasoningEffort) {
++    return undefined
++  }
++
++  if (reasoningEffort === 'disabled') {
++    return {
++      openaiCompatible: {
++        thinking: {
++          type: 'disabled',
++        },
++      },
++      [providerOptionsName]: {
++        thinking: {
++          type: 'disabled',
++        },
++      },
++    }
++  }
++
++  return {
++    openaiCompatible: {
++      reasoningEffort,
++    },
++    [providerOptionsName]: {
++      thinking: {
++        type: 'enabled',
++      },
++    },
++  }
++}
++
++function sanitizeReasoningProviderOptions(
++  requestProviderOptions: RequestProviderOptions | undefined
++): ReasoningEffortDebugRequestProviderOptions {
++  const sanitized: ReasoningEffortDebugRequestProviderOptions = {}
++
++  for (const [providerName, providerSettings] of Object.entries(requestProviderOptions || {})) {
++    const sanitizedProviderSettings: Record<string, JSONValue> = {}
++    const reasoningEffort = providerSettings.reasoningEffort
++    if (typeof reasoningEffort === 'string') {
++      sanitizedProviderSettings.reasoning_effort = reasoningEffort
++    }
++
++    const thinking = providerSettings.thinking
++    if (thinking && typeof thinking === 'object' && !Array.isArray(thinking)) {
++      const thinkingType = (thinking as Record<string, JSONValue>).type
++      if (typeof thinkingType === 'string') {
++        sanitizedProviderSettings.thinking = {
++          type: thinkingType,
++        }
++      }
++    }
++
++    if (Object.keys(sanitizedProviderSettings).length > 0) {
++      sanitized[providerName] = sanitizedProviderSettings
++    }
++  }
++
++  return sanitized
++}
++
++export function createReasoningEffortDebugPayload(
++  providerName: string,
++  providerOptions: ProviderOptions | undefined,
++  requestProviderOptions: RequestProviderOptions | undefined
++) {
++  if (!getReasoningEffortDebugLogging(providerOptions)) {
++    return undefined
++  }
++
++  return {
++    tag: REASONING_EFFORT_DEBUG_LOG_TAG,
++    provider: providerName,
++    selectedReasoningEffort: getReasoningEffort(providerOptions) ?? null,
++    requestProviderOptions: sanitizeReasoningProviderOptions(requestProviderOptions),
++  }
++}
++
++export function logReasoningEffortRequest(
++  providerName: string,
++  providerOptions: ProviderOptions | undefined,
++  requestProviderOptions: RequestProviderOptions | undefined
++) {
++  const payload = createReasoningEffortDebugPayload(providerName, providerOptions, requestProviderOptions)
++  if (payload) {
++    console.info(`[${REASONING_EFFORT_DEBUG_LOG_TAG}] ${JSON.stringify(payload)}`)
++  }
++}
