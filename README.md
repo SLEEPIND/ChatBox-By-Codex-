@@ -23,7 +23,7 @@
 | --- | --- |
 | 文件名 | chatbox-enter-newline-disable-thinking-button-send-debug.apk |
 | 大小 | 30.88 MB |
-| SHA256 | $hash |
+| SHA256 | 95ABF9C8A4EDE6ABACFD9FA5DC27B8334C6652D51AB611C9513872188D4CFF23 |
 | 包名 | xyz.chatboxapp.ce |
 | 应用名 | Chatbox |
 | 签名 | Android debug 签名 |
@@ -40,10 +40,10 @@ adb install -r .\chatbox-enter-newline-disable-thinking-button-send-debug.apk
 
 Codex 在本地完成了以下验证：
 
-- 针对性测试：7 test files / 26 tests passed
-- 前端 Android/mobile 构建：通过
+- 针对性测试:7 test files / 26 tests passed
+- 前端 Android/mobile 构建:通过
 - Gradle:ssembleDebug 构建成功
-- APK:已通过 pksigner verify --print-certs 校验
+- APK:已通过pksigner verify --print-certs 校验
 
 ## 说明
 
