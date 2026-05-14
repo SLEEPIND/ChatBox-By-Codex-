@@ -13,14 +13,9 @@
 
 ## 这版改了什么
 
-- 输入框按 Enter 只换行，不再直接发送。
-- 禁用 Enter / Ctrl+Enter 等键盘快捷发送，发送只能点击发送按钮。
 - 思考强度选项新增「关闭思考」。
 - 思考强度保留：未设置、关闭思考、低、中、高、超高。
-- 移除了之前容易混淆的「最大」选项。
-- 保留思考强度调试日志开关，方便用 adb logcat 查看 
-easoning-effort-debug。
-- 继续保留之前对 Android 状态栏、安全区、键盘弹起相关的兼容修正。
+- 保留思考强度调试日志开关，方便用adb logcat 查看reasoning-effort-debug。
 
 ## APK 信息
 
@@ -47,8 +42,8 @@ Codex 在本地完成了以下验证：
 
 - 针对性测试：7 test files / 26 tests passed
 - 前端 Android/mobile 构建：通过
-- Gradle：ssembleDebug 构建成功
-- APK：已通过 pksigner verify --print-certs 校验
+- Gradle:ssembleDebug 构建成功
+- APK:已通过 pksigner verify --print-certs 校验
 
 ## 说明
 
